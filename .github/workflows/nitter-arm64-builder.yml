@@ -1,0 +1,134 @@
+name: Nitter ARM64 Auto Builder
+
+on:
+  # Manual trigger
+  workflow_dispatch:
+  
+  # Check for upstream updates every 6 hours
+  schedule:
+    - cron: '0 */6 * * *'
+  
+  # Trigger on push to master
+  push:
+    branches: [ master ]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/nitter-arm64
+
+jobs:
+  check-and-sync:
+    runs-on: ubuntu-latest
+    outputs:
+      has-updates: ${{ steps.check.outputs.has-updates }}
+      latest-commit: ${{ steps.check.outputs.latest-commit }}
+    
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Add upstream and check for updates
+        id: check
+        run: |
+          git remote add upstream https://github.com/zedeus/nitter.git
+          git fetch upstream master
+          
+          # Get current HEAD and upstream HEAD
+          CURRENT=$(git rev-parse HEAD)
+          UPSTREAM=$(git rev-parse upstream/master)
+          
+          echo "Current: $CURRENT"
+          echo "Upstream: $UPSTREAM"
+          echo "latest-commit=$UPSTREAM" >> $GITHUB_OUTPUT
+          
+          if [ "$CURRENT" != "$UPSTREAM" ]; then
+            echo "has-updates=true" >> $GITHUB_OUTPUT
+            echo "🔄 New commits found in upstream"
+          else
+            echo "has-updates=false" >> $GITHUB_OUTPUT
+            echo "✅ Fork is up to date"
+          fi
+
+      - name: Sync with upstream
+        if: steps.check.outputs.has-updates == 'true'
+        run: |
+          git config user.name "GitHub Actions Bot"
+          git config user.email "actions@github.com"
+          git checkout master
+          git merge upstream/master --no-edit
+          git push origin master
+
+  build-arm64:
+    needs: check-and-sync
+    if: needs.check-and-sync.outputs.has-updates == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
+      packages: write
+    
+    steps:
+      - name: Checkout updated code
+        uses: actions/checkout@v4
+        with:
+          ref: master
+      
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix=master-,format=short
+            type=raw,value=latest
+            type=raw,value=rpi
+            type=raw,value={{date 'YYYY-MM-DD'}}
+      
+      - name: Build and push ARM64 image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            BUILDARCH=arm64
+      
+      - name: Summary
+        if: needs.check-and-sync.outputs.has-updates == 'true'
+        run: |
+          echo "## 🚀 ARM64 Build Complete!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Upstream commit:** \`${{ needs.check-and-sync.outputs.latest-commit }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Platform:** linux/arm64 (Raspberry Pi compatible)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📦 Available Images:" >> $GITHUB_STEP_SUMMARY
+          echo "- \`ghcr.io/${{ github.repository }}/nitter-arm64:latest\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`ghcr.io/${{ github.repository }}/nitter-arm64:rpi\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`ghcr.io/${{ github.repository }}/nitter-arm64:$(date +'%Y-%m-%d')\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔧 Usage on Raspberry Pi:" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ghcr.io/${{ github.repository }}/nitter-arm64:latest" >> $GITHUB_STEP_SUMMARY
+          echo "docker run -d -p 8080:8080 ghcr.io/${{ github.repository }}/nitter-arm64:latest" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
