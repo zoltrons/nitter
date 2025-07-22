@@ -6,7 +6,7 @@ on:
   
   # Check for upstream updates every 6 hours
   schedule:
-    - cron: '0 */6 * * *'
+    - cron: '0 2 * * 0'
   
   # Trigger on push to master
   push:
