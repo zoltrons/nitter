@@ -7,20 +7,6 @@ import experimental/parser/session
 const
   maxConcurrentReqs = 2
   hourInSeconds = 60 * 60
-  apiMaxReqs: Table[Api, int] = {
-    Api.search: 50,
-    Api.tweetDetail: 500,
-    Api.userTweets: 500,
-    Api.userTweetsAndReplies: 500,
-    Api.userMedia: 500,
-    Api.userRestId: 500,
-    Api.userScreenName: 500,
-    Api.tweetResult: 500,
-    Api.list: 500,
-    Api.listTweets: 500,
-    Api.listMembers: 500,
-    Api.listBySlug: 500
-  }.toTable
 
 var
   sessionPool: seq[Session]
@@ -28,6 +14,20 @@ var
 
 template log(str: varargs[string, `$`]) =
   echo "[sessions] ", str.join("")
+
+proc pretty*(session: Session): string =
+  if session.isNil:
+    return "<null>"
+
+  if session.id > 0 and session.username.len > 0:
+    result = $session.id & " (" & session.username & ")"
+  elif session.username.len > 0:
+    result = session.username
+  elif session.id > 0:
+    result = $session.id
+  else:
+    result = "<unknown>"
+  result = $session.kind & " " & result
 
 proc snowflakeToEpoch(flake: int64): int64 =
   int64(((flake shr 22) + 1288834974657) div 1000)
@@ -57,7 +57,7 @@ proc getSessionPoolHealth*(): JsonNode =
     for api in session.apis.keys:
       let
         apiStatus = session.apis[api]
-        reqs = apiMaxReqs[api] - apiStatus.remaining
+        reqs = apiStatus.limit - apiStatus.remaining
 
       # no requests made with this session and endpoint since the limit reset
       if apiStatus.reset < now:
@@ -129,7 +129,7 @@ proc isLimited(session: Session; api: Api): bool =
   if session.limited and api != Api.userTweets:
     if (epochTime().int - session.limitedAt) > hourInSeconds:
       session.limited = false
-      log "resetting limit: ", session.id
+      log "resetting limit: ", session.pretty
       return false
     else:
       return true
@@ -145,7 +145,7 @@ proc isReady(session: Session; api: Api): bool =
 
 proc invalidate*(session: var Session) =
   if session.isNil: return
-  log "invalidating: ", session.id
+  log "invalidating: ", session.pretty
 
   # TODO: This isn't sufficient, but it works for now
   let idx = sessionPool.find(session)
@@ -170,19 +170,19 @@ proc getSession*(api: Api): Future[Session] {.async.} =
 proc setLimited*(session: Session; api: Api) =
   session.limited = true
   session.limitedAt = epochTime().int
-  log "rate limited by api: ", api, ", reqs left: ", session.apis[api].remaining, ", id: ", session.id
+  log "rate limited by api: ", api, ", reqs left: ", session.apis[api].remaining, ", ", session.pretty
 
-proc setRateLimit*(session: Session; api: Api; remaining, reset: int) =
+proc setRateLimit*(session: Session; api: Api; remaining, reset, limit: int) =
   # avoid undefined behavior in race conditions
   if api in session.apis:
-    let limit = session.apis[api]
-    if limit.reset >= reset and limit.remaining < remaining:
+    let rateLimit = session.apis[api]
+    if rateLimit.reset >= reset and rateLimit.remaining < remaining:
       return
-    if limit.reset == reset and limit.remaining >= remaining:
+    if rateLimit.reset == reset and rateLimit.remaining >= remaining:
       session.apis[api].remaining = remaining
       return
 
-  session.apis[api] = RateLimit(remaining: remaining, reset: reset)
+  session.apis[api] = RateLimit(limit: limit, remaining: remaining, reset: reset)
 
 proc initSessionPool*(cfg: Config; path: string) =
   enableLogging = cfg.enableDebug

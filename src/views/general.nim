@@ -30,7 +30,7 @@ proc renderNavbar(cfg: Config; req: Request; rss, canonical: string): VNode =
       tdiv(class="nav-item right"):
         icon "search", title="Search", href="/search"
         if cfg.enableRss and rss.len > 0:
-          icon "rss-feed", title="RSS Feed", href=rss
+          icon "rss", title="RSS Feed", href=rss
         icon "bird", title="Open in Twitter", href=canonical
         a(href="https://liberapay.com/zedeus"): verbatim lp
         icon "info", title="About", href="/about"
@@ -53,7 +53,7 @@ proc renderHead*(prefs: Prefs; cfg: Config; req: Request; titleText=""; desc="";
 
   buildHtml(head):
     link(rel="stylesheet", type="text/css", href="/css/style.css?v=19")
-    link(rel="stylesheet", type="text/css", href="/css/fontello.css?v=2")
+    link(rel="stylesheet", type="text/css", href="/css/fontello.css?v=3")
 
     if theme.len > 0:
       link(rel="stylesheet", type="text/css", href=(&"/css/themes/{theme}.css"))
@@ -119,7 +119,7 @@ proc renderHead*(prefs: Prefs; cfg: Config; req: Request; titleText=""; desc="";
     # this is last so images are also preloaded
     # if this is done earlier, Chrome only preloads one image for some reason
     link(rel="preload", type="font/woff2", `as`="font",
-         href="/fonts/fontello.woff2?21002321", crossorigin="anonymous")
+         href="/fonts/fontello.woff2?61663884", crossorigin="anonymous")
 
 proc renderMain*(body: VNode; req: Request; cfg: Config; prefs=defaultPrefs;
                  titleText=""; desc=""; ogTitle=""; rss=""; video="";

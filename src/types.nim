@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-import times, sequtils, options, tables
+import times, sequtils, options, tables, uri
 import prefs_impl
 
 genPrefsType()
@@ -28,17 +28,32 @@ type
     userMedia
 
   RateLimit* = object
+    limit*: int
     remaining*: int
     reset*: int
 
+  SessionKind* = enum
+    oauth
+    cookie
+
   Session* = ref object
     id*: int64
-    oauthToken*: string
-    oauthSecret*: string
+    username*: string
     pending*: int
     limited*: bool
     limitedAt*: int
     apis*: Table[Api, RateLimit]
+    case kind*: SessionKind
+    of oauth:
+      oauthToken*: string
+      oauthSecret*: string
+    of cookie:
+      authToken*: string
+      ct0*: string
+
+  SessionAwareUrl* = object
+    oauthUrl*: Uri
+    cookieUrl*: Uri
 
   Error* = enum
     null = 0
@@ -188,6 +203,7 @@ type
     retweets*: int
     likes*: int
     quotes*: int
+    views*: int
 
   Tweet* = ref object
     id*: int64
